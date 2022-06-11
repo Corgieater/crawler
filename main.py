@@ -25,7 +25,7 @@ CHROME_LOCATION = os.getenv('CHROME_LOCATION')
 WATCHER_FOLDER = os.getenv('WATCHER_FOLDER')
 
 
-user_agent = UserAgent()
+user_agent = UserAgent(use_cache_server=False)
 headers = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/"
               "webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
@@ -273,7 +273,7 @@ def search_movies_per_year(find_next=False):
 
 
 current_page = search_movies_per_year()
-make_url_state = make_url_list(current_page)
+make_url_list(current_page)
 
 
 while this_is_end is not True:
