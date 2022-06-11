@@ -223,6 +223,8 @@ def get_driver():
         chrome_options.add_argument("--headless")
         options = Options()
         options.add_argument("--disable-notifications")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
         setattr(thread_local, 'driver', driver)
     return driver
