@@ -1,3 +1,4 @@
+import pandas
 from bs4 import BeautifulSoup
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -5,7 +6,6 @@ import requests
 from fake_useragent import UserAgent
 import random
 import time
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -17,12 +17,14 @@ from time import sleep
 from dateutil.relativedelta import relativedelta
 import os
 from dotenv import load_dotenv
+import pandas as pd
 
 thread_local = threading.local()
 
 load_dotenv()
 CHROME_LOCATION = os.getenv('CHROME_LOCATION')
 WATCHER_FOLDER = os.getenv('WATCHER_FOLDER')
+FILE_LOCATION = os.getenv('FILE_LOCATION')
 
 
 user_agent = UserAgent(use_cache_server=False)
@@ -50,7 +52,7 @@ from_year = None
 to_year = None
 
 # get year
-with open('year_list.csv', 'r', encoding="utf-8", errors="ignore") as f:
+with open(f'{FILE_LOCATION}year_list.csv', 'r', encoding="utf-8", errors="ignore") as f:
     reader = csv.reader(f)
     for row in reader:
         from_year = row[0]
@@ -62,13 +64,11 @@ next_to_year = datetime.strptime(to_year, "%Y-%m-%d").date() - relativedelta(yea
 
 all_urls = []
 
-
-global genre_count
 genre_count = 0
-global movie_counts
 movie_counts = 0
 global this_is_end
 this_is_end = False
+
 
 def make_url_list(main_url):
     html = requests.get(main_url, headers=headers)
@@ -91,8 +91,11 @@ def get_data_clean_it_and_input_data(page_url):
     movie_data_list = []
 
     page = requests.get(page_url, headers=headers)
+    random_delay([1, 5, 10, 16, 8])
 
     soup = BeautifulSoup(page.text, 'html.parser')
+
+
     scraped_movie = []
     scraped_poster = []
     unclean_title = None
@@ -172,8 +175,8 @@ def get_data_clean_it_and_input_data(page_url):
         try:
             imdb_poster_url = 'https://www.imdb.com' + \
                               soup.find('a', attrs={'class': 'ipc-lockup-overlay ipc-focusable'})['href']
-            random_delay([5, 3, 4, 6, 10, 11])
             poster_place = requests.get(imdb_poster_url, headers=headers)
+            random_delay([8, 5, 10, 6, 20, 11])
             soup = BeautifulSoup(poster_place.text, 'html.parser')
             poster_url = soup.find('img', attrs={'class': 'sc-7c0a9e7c-0 hXPlvk'})['src']
             scraped_poster.append(poster_url)
@@ -187,7 +190,6 @@ def get_data_clean_it_and_input_data(page_url):
         scraped_movie.append(actors)
         scraped_movie.append(poster_url)
         movie_data_list.append(scraped_movie)
-
         with open(f'{WATCHER_FOLDER}{file_name}.csv', 'a', newline='', encoding='utf8') as file:
             movie_writer = csv.writer(file)
             for data in movie_data_list:
@@ -221,53 +223,100 @@ def get_driver():
     if driver is None:
         chrome_options = webdriver.ChromeOptions()
         chrome_options.add_argument("--headless")
-        options = Options()
-        options.add_argument("--disable-notifications")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-setuid-sandbox")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--disable-notifications")
+        chrome_options.add_argument(CHROME_LOCATION)
+
+        driver = webdriver.Chrome(options=chrome_options, service=Service(ChromeDriverManager().install()))
         setattr(thread_local, 'driver', driver)
     return driver
 
 
-# this will get first page
-def search_movies_per_year(find_next=False):
-    # 設置路徑讓Selenium找到chrome的driver
-    global this_is_end
+def check_if_next_page():
     chrome = get_driver()
-    if find_next:
-        try:
-            next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
-            print(next_page, 'next Page')
-        except Exception as e:
-            print(e)
-            this_is_end = True
-            return
-        else:
-            next_page.click()
-    # go to imdb
+    try:
+        next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
+    except Exception as e:
+        print(e)
+        return False
     else:
-        chrome.get("https://www.imdb.com/")
-        # find the drop down menu and click it
-        imdb_drop_down = chrome.find_element(By.XPATH, '//*[@id="nav-search-form"]/div[1]/div/label/div')
-        imdb_drop_down.click()
-        advance_search = chrome.find_element(By.XPATH, '//*[@id="navbar-search-category-select-contents"]/ul/a')
-        advance_search.click()
-        advance_title_search = chrome.find_element(By.XPATH, '//*[@id="main"]/div[2]/div[1]/a')
-        advance_title_search.click()
-        sleep(3)
-        # advance search
-        featured_film_checkbox = chrome.find_element(By.XPATH, '//*[@id="title_type-1"]')
-        featured_film_checkbox.click()
-        from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
-        from_when_input.send_keys(from_year)
-        to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
-        to_when_input.send_keys(to_year)
-        movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
-        Select(movies_per_page_selection).select_by_value("250")
-        sleep(1)
-        submit = chrome.find_element(By.XPATH, '//*[@id="main"]/p[3]/button')
-        submit.click()
+        next_page.click()
+        url = chrome.current_url
+        return url
+    finally:
+        chrome.quit()
+
+
+# # this will get page url at first
+# def search_movies_per_year(find_next=True):
+#     # 設置路徑讓Selenium找到chrome的driver
+#     chrome = get_driver()
+#     if find_next:
+#         try:
+#             next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
+#         except Exception as e:
+#             print(e)
+#             global this_is_end
+#             this_is_end = True
+#             return
+#         else:
+#             next_page.click()
+#     # go to imdb
+#     else:
+#         chrome.get("https://www.imdb.com/")
+#         # find the drop down menu and click it
+#         imdb_drop_down = chrome.find_element(By.XPATH, '//*[@id="nav-search-form"]/div[1]/div/label/div')
+#         imdb_drop_down.click()
+#         advance_search = chrome.find_element(By.XPATH, '//*[@id="navbar-search-category-select-contents"]/ul/a')
+#         advance_search.click()
+#         advance_title_search = chrome.find_element(By.XPATH, '//*[@id="main"]/div[2]/div[1]/a')
+#         advance_title_search.click()
+#         sleep(3)
+#         # advance search
+#         featured_film_checkbox = chrome.find_element(By.XPATH, '//*[@id="title_type-1"]')
+#         featured_film_checkbox.click()
+#         from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
+#         from_when_input.send_keys(from_year)
+#         to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
+#         to_when_input.send_keys(to_year)
+#         movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
+#         Select(movies_per_page_selection).select_by_value("250")
+#         sleep(1)
+#         submit = chrome.find_element(By.XPATH, '//*[@id="main"]/p[3]/button')
+#         submit.click()
+#
+#     current_url = chrome.current_url
+#     chrome.close()
+#     return current_url
+
+# TEST this will get first page
+def search_movies_per_year():
+    # 設置路徑讓Selenium找到chrome的driver
+    chrome = get_driver()
+    # go to imdb
+    chrome.get("https://www.imdb.com/")
+    # find the drop down menu and click it
+    imdb_drop_down = chrome.find_element(By.XPATH, '//*[@id="nav-search-form"]/div[1]/div/label/div')
+    imdb_drop_down.click()
+    advance_search = chrome.find_element(By.XPATH, '//*[@id="navbar-search-category-select-contents"]/ul/a')
+    advance_search.click()
+    advance_title_search = chrome.find_element(By.XPATH, '//*[@id="main"]/div[2]/div[1]/a')
+    advance_title_search.click()
+    sleep(3)
+    # advance search
+    featured_film_checkbox = chrome.find_element(By.XPATH, '//*[@id="title_type-1"]')
+    featured_film_checkbox.click()
+    from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
+    from_when_input.send_keys(from_year)
+    to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
+    to_when_input.send_keys(to_year)
+    movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
+    Select(movies_per_page_selection).select_by_value("250")
+    sleep(1)
+    submit = chrome.find_element(By.XPATH, '//*[@id="main"]/p[3]/button')
+    submit.click()
 
     current_url = chrome.current_url
     chrome.close()
@@ -276,22 +325,31 @@ def search_movies_per_year(find_next=False):
 
 current_page = search_movies_per_year()
 make_url_list(current_page)
-
+# make_url_list('https://www.imdb.com/search/title/?title=top+gun&title_type=feature')
 
 while this_is_end is not True:
     with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(get_data_clean_it_and_input_data, all_urls)
         total_movies = len(all_urls)
-        if total_movies == 250 and movie_counts == total_movies:
-            search_movies_per_year(find_next=True)
-            movie_counts = 0
-        elif total_movies != 250 and total_movies <= movie_counts:
-            this_is_end = True
-            break
+        if total_movies <= 250 and movie_counts >= total_movies:
+            next_page = check_if_next_page()
+            print('next page \n', next_page)
+            if not next_page:
+                this_is_end = True
+                break
+            else:
+                movie_counts = 0
+                make_url_list(next_page)
 
-with open('year_list.csv', 'a', newline='', encoding='utf8') as f:
+with open(f'{FILE_LOCATION}year_list.csv', 'a', newline='', encoding='utf8') as f:
     writer = csv.writer(f)
     writer.writerow([next_from_year, next_to_year])
+
+# drop duplicates
+df = pd.read_csv(f'{WATCHER_FOLDER}{file_name}.csv')
+df.drop_duplicates()
+
+# write an ok file to tell watcher move
 with open(f'{WATCHER_FOLDER}{file_name}_ok.csv', 'w', newline='', encoding='utf8') as f:
     writer = csv.writer(f)
     writer.writerow('ok')
