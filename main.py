@@ -56,6 +56,7 @@ with open(f'{FILE_LOCATION}year_list.csv', 'r', encoding="utf-8", errors="ignore
     for row in reader:
         from_year = row[0]
         to_year = row[1]
+        print('from year to year\n', from_year, to_year)
 
 
 next_from_year = datetime.strptime(from_year, "%Y-%m-%d").date() - relativedelta(years=1)
@@ -222,7 +223,7 @@ def get_driver():
     if driver is None:
         chrome_options = webdriver.ChromeOptions()
         # for efficiency
-        chrome_options.add_argument("--headless")
+        # chrome_options.add_argument("--headless")
         # chrome_options.add_argument("--no-sandbox")
         # chrome_options.add_argument("--disable-setuid-sandbox")
         # below seems it has some problems if not in ec2
@@ -257,10 +258,24 @@ def search_movies_per_page(find_next=False):
     chrome = get_driver()
     if find_next:
         try:
-            # # test only since i didn't open a chrome during this test!!!!
-            # chrome.get('https://www.imdb.com/search/title/?'
-            #            'title_type=feature&release_date=2021-01-01,2021-01-15&sort=moviemeter,desc&count=50')
-            next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
+            # IMDB previous and next link are the same if only one remain
+            # Means their xpath will all be div[4][a] if at the very first page and the last page
+            a_link_text = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a').text
+            print(a_link_text)
+            if a_link_text == 'Next »':
+                next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
+            elif a_link_text == '« Previous':
+                try:
+                    next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a[2]')
+                except Exception as e:
+                    print('only previous last top paul')
+                    print(e)
+                    return False
+        except Exception as e:
+            print(e)
+            print('NEXTPAGE-------------', next_page)
+            return False
+
         except Exception as e:
             print(e)
             return False
@@ -283,20 +298,25 @@ def search_movies_per_page(find_next=False):
         featured_film_checkbox.click()
         # insert movies date where to  start from
         from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
-        from_when_input.send_keys(from_year)
+        # from_when_input.send_keys(from_year)
+        from_when_input.send_keys('2022-01-01')
+        sleep(6)
         # insert movies date where to end
         to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
-        to_when_input.send_keys(to_year)
+        # to_when_input.send_keys(to_year)
         # choose how many movies in a page
+        to_when_input.send_keys('2022-01-5')
+        sleep(6)
         movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
 
-        Select(movies_per_page_selection).select_by_value("250")
+        Select(movies_per_page_selection).select_by_value("50")
         sleep(1)
         submit = chrome.find_element(By.XPATH, '//*[@id="main"]/p[3]/button')
         submit.click()
 
     current_url = chrome.current_url
     # chrome.close()
+    print('url;lllllllll\n', current_url)
     return current_url
 
 # # TEST this will get first page
@@ -405,6 +425,7 @@ if __name__ == '__main__':
             if scrape_done:
                 # movie_counts = 0
                 continue_next = search_movies_per_page(find_next=True)
+                print('NEXT???????????????\n', continue_next)
                 if continue_next:
                     urls_list_ready = make_url_list(continue_next)
                 else:
