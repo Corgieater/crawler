@@ -24,6 +24,7 @@ load_dotenv()
 CHROME_LOCATION = os.getenv('CHROME_LOCATION')
 WATCHER_FOLDER = os.getenv('WATCHER_FOLDER')
 FILE_LOCATION = os.getenv('FILE_LOCATION')
+ENVIRONMENT = os.getenv('ENVIRONMENT')
 
 
 user_agent = UserAgent(use_cache_server=False)
@@ -47,25 +48,38 @@ date = today.strftime("%Y-%m-%d")
 file_name = f'movie_{date}'
 
 
-from_year = None
-to_year = None
+# from_date = None
+# to_date = None
+
+from_date = None
+to_date = None
+genre_count = 0
 
 # get year
 with open(f'{FILE_LOCATION}year_list.csv', 'r', encoding="utf-8", errors="ignore") as f:
     reader = csv.reader(f)
     for row in reader:
-        from_year = row[0]
-        to_year = row[1]
-        print('from year to year\n', from_year, to_year)
+        from_date = row[0].replace('/', '-')
+        to_date = row[1].replace('/', '-')
+        print('from year to year\n', from_date, to_date)
 
 
-next_from_year = datetime.strptime(from_year, "%Y-%m-%d").date() - relativedelta(years=1)
-next_to_year = datetime.strptime(to_year, "%Y-%m-%d").date() - relativedelta(years=1)
+check_month = datetime.strptime(to_date, "%Y-%m-%d").date().month
+# 3 months per scrape
+# 2020-01-01 2020-03-31
+# 2020-04-01 2020-06-30
+# 2020-07-01 2020-09-30
+# 2020-10-01 2020-12-31
 
-genre_count = 0
-# movie_counts = 0
-# global urls_list_ready
-# urls_list_ready = None
+# it's means it supposed to change year next time
+if check_month == 12:
+    next_from_date = datetime.strptime(from_date, "%Y-%m-%d").date() + relativedelta(months=3)
+    next_to_date = datetime.strptime(to_date, "%Y-%m-%d").date() + relativedelta(months=3)
+    next_from_date = next_from_date - relativedelta(years=2)
+    next_to_date = next_to_date - relativedelta(years=2)
+else:
+    next_from_date = datetime.strptime(from_date, "%Y-%m-%d").date() + relativedelta(months=3)
+    next_to_date = datetime.strptime(to_date, "%Y-%m-%d").date() + relativedelta(months=3)
 
 
 def make_url_list(main_url):
@@ -86,10 +100,7 @@ def make_url_list(main_url):
 # new no mysql task write to csv
 def get_data_clean_it_and_input_data(page_url):
     global genre_count
-    # global movie_counts
-    # movie_counts += 1
     movie_data_list = []
-    # print('movie_counts\n', movie_counts)
 
     page = requests.get(page_url, headers=headers)
     random_delay([1, 5, 10, 16, 8])
@@ -97,7 +108,6 @@ def get_data_clean_it_and_input_data(page_url):
     soup = BeautifulSoup(page.text, 'html.parser')
 
     scraped_movie = []
-    # scraped_poster = []
     unclean_title = None
     unclean_year = None
     tag_line = None
@@ -106,7 +116,6 @@ def get_data_clean_it_and_input_data(page_url):
     # get title
     try:
         unclean_title = soup.title.string
-        print(unclean_title)
     except Exception as e:
         print(e)
 
@@ -127,6 +136,9 @@ def get_data_clean_it_and_input_data(page_url):
     # scraped_poster.append(year)
     try:
         story_line = soup.find('span', class_='sc-16ede01-2 gXUyNh').getText()
+        if story_line == '':
+            print('no story line skip')
+            return
         scraped_movie.append(story_line)
     except Exception as e:
         print(e)
@@ -171,7 +183,7 @@ def get_data_clean_it_and_input_data(page_url):
             directors.append(soup.find(text='Director').findNext('div').findNext('ul').
                              find('li').find('a').getText())
 
-        # get poster url if none, don't need to do anything
+        # get poster url if none, skip movie
         try:
             imdb_poster_url = 'https://www.imdb.com' + \
                               soup.find('a', attrs={'class': 'ipc-lockup-overlay ipc-focusable'})['href']
@@ -179,7 +191,6 @@ def get_data_clean_it_and_input_data(page_url):
             random_delay([8, 5, 10, 6, 20, 11])
             soup = BeautifulSoup(poster_place.text, 'html.parser')
             poster_url = soup.find('img', attrs={'class': 'sc-7c0a9e7c-0 hXPlvk'})['src']
-            # scraped_poster.append(poster_url)
 
         except Exception as e:
             print(e, 'skip')
@@ -224,12 +235,18 @@ def get_driver():
         chrome_options = webdriver.ChromeOptions()
         # for efficiency
         # chrome_options.add_argument("--headless")
-        # chrome_options.add_argument("--no-sandbox")
-        # chrome_options.add_argument("--disable-setuid-sandbox")
-        # below seems it has some problems if not in ec2
-        # chrome_options.add_argument("--remote-debugging-port=9222")
+        # for not been block by pop windows
         chrome_options.add_argument("--disable-notifications")
+        # driver location
         chrome_options.add_argument(CHROME_LOCATION)
+        if ENVIRONMENT != 'local':
+            # below seems it has some problems if not in ec2
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-setuid-sandbox")
+            chrome_options.add_argument("--remote-debugging-port=9222")
+            chrome_options.add_argument('--window-size=1420,1080')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
 
         driver = webdriver.Chrome(options=chrome_options, service=Service(ChromeDriverManager().install()))
         setattr(thread_local, 'driver', driver)
@@ -237,12 +254,10 @@ def get_driver():
 
 
 def check_if_next_page(url):
-    print('in next func')
     chrome = get_driver()
     chrome.get(url)
     try:
         next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
-        print('next_page', next_page)
     except Exception as e:
         print(e)
         return False
@@ -257,28 +272,29 @@ def search_movies_per_page(find_next=False):
     # 設置路徑讓Selenium找到chrome的driver
     chrome = get_driver()
     if find_next:
+        next_page = None
         try:
             # IMDB previous and next link are the same if only one remain
             # Means their xpath will all be div[4][a] if at the very first page and the last page
             a_link_text = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a').text
-            print(a_link_text)
             if a_link_text == 'Next »':
                 next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a')
             elif a_link_text == '« Previous':
                 try:
                     next_page = chrome.find_element(By.XPATH, '//*[@id="main"]/div/div[4]/a[2]')
                 except Exception as e:
-                    print('only previous last top paul')
+                    print('only previous and last has a[2], paul')
                     print(e)
+                    chrome.close()
+                    # 我多加這行 晚點去ec2上看看
                     return False
         except Exception as e:
             print(e)
-            print('NEXTPAGE-------------', next_page)
             return False
 
-        except Exception as e:
-            print(e)
-            return False
+        # except Exception as e: why this here?
+        #     print(e)
+        #     return False
         else:
             print('i am clicking next page baby!!!!!!!!!\n')
             next_page.click()
@@ -298,14 +314,12 @@ def search_movies_per_page(find_next=False):
         featured_film_checkbox.click()
         # insert movies date where to  start from
         from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
-        # from_when_input.send_keys(from_year)
-        from_when_input.send_keys('2022-01-01')
+        from_when_input.send_keys(from_date)
         sleep(6)
         # insert movies date where to end
         to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
-        # to_when_input.send_keys(to_year)
+        to_when_input.send_keys(to_date)
         # choose how many movies in a page
-        to_when_input.send_keys('2022-01-5')
         sleep(6)
         movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
 
@@ -316,105 +330,19 @@ def search_movies_per_page(find_next=False):
 
     current_url = chrome.current_url
     # chrome.close()
-    print('url;lllllllll\n', current_url)
+    print('urllllllllll\n', current_url)
     return current_url
 
-# # TEST this will get first page
-# def search_movies_per_year():
-#     # 設置路徑讓Selenium找到chrome的driver
-#     chrome = get_driver()
-#     # go to imdb
-#     chrome.get("https://www.imdb.com/")
-#     # find the drop down menu and click it
-#     imdb_drop_down = chrome.find_element(By.XPATH, '//*[@id="nav-search-form"]/div[1]/div/label/div')
-#     imdb_drop_down.click()
-#     advance_search = chrome.find_element(By.XPATH, '//*[@id="navbar-search-category-select-contents"]/ul/a')
-#     advance_search.click()
-#     advance_title_search = chrome.find_element(By.XPATH, '//*[@id="main"]/div[2]/div[1]/a')
-#     advance_title_search.click()
-#     sleep(3)
-#     # advance search
-#     featured_film_checkbox = chrome.find_element(By.XPATH, '//*[@id="title_type-1"]')
-#     featured_film_checkbox.click()
-#     from_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[1]')
-#     from_when_input.send_keys(from_year)
-#     to_when_input = chrome.find_element(By.XPATH, '//*[@id="main"]/div[3]/div[2]/input[2]')
-#     to_when_input.send_keys(to_year)
-#     movies_per_page_selection = chrome.find_element(By.XPATH, '// *[ @ id = "search-count"]')
-#     Select(movies_per_page_selection).select_by_value("250")
-#     sleep(1)
-#     submit = chrome.find_element(By.XPATH, '//*[@id="main"]/p[3]/button')
-#     submit.click()
-#
-#     current_url = chrome.current_url
-#     return current_url
 
-
+# get page url
 current_page = search_movies_per_page()
 urls_list_ready = make_url_list(current_page)
-# urls_list_ready = make_url_list('https://www.imdb.com/search/title/?title_type=feature&release_date'
-#               '=2022-01-01,2022-01-15&count=250&start=1&ref_=adv_nxt')
-
-# urls_list_ready = make_url_list('https://www.imdb.com/search/title/?'
-#                                 'title_type=feature&release_date=2021-01-01,2021-01-15&sort=moviemeter,desc&count=50')
-print('urls_list_ready\n', urls_list_ready)
 
 
 def scrape(urls):
     with ThreadPoolExecutor(max_workers=10) as executor:
         executor.map(get_data_clean_it_and_input_data, urls, chunksize=5)
         return True
-        # futures = []
-        # for url in urls:
-        #     futures.append(executor.submit(get_data_clean_it_and_input_data, url))
-        #     time.sleep(0.2)
-        # for future in concurrent.futures.as_completed(futures):
-        #     print(future.result())
-        # done, not_done = wait(futures, return_when=concurrent.futures.ALL_COMPLETED)
-        # if movie_counts >= total_movies:
-        #     print('STOPPPPPPPPPPPPPPPPP for next\n')
-        #     return True
-
-
-# while urls_list_ready != 0:
-#     list_len = urls_list_ready[1]
-#     scrape_done = scrape(urls_list_ready[0], list_len)
-#
-#     if scrape_done:
-#         movie_counts = 0
-#         continue_next = check_if_next_page()
-#         if continue_next:
-#             urls_list_ready = make_url_list(continue_next)
-#         else:
-#             print('global now\n', urls_list_ready)
-#             urls_list_ready = False
-#             print('global after\n', urls_list_ready)
-#             break
-
-    # if page_job_done:
-    #     next_page = check_if_next_page()
-    #     if not next_page:
-    #         print('no next')
-    #     else:
-    #         new_url_list = make_url_list(next_page)
-
-
-
-
-# while this_is_end is not True:
-#     print('open nnew thread')
-#     with ThreadPoolExecutor(max_workers=10) as executor:
-#         executor.map(get_data_clean_it_and_input_data, all_urls)
-#         total_movies = len(all_urls)
-#         if total_movies <= 250 and movie_counts >= total_movies:
-#             next_page = check_if_next_page()
-#             print('next page \n', next_page)
-#             if not next_page:
-#                 this_is_end = True
-#                 break
-#             else:
-#                 movie_counts = 0
-#                 make_url_list(next_page)
 
 
 if __name__ == '__main__':
@@ -423,7 +351,6 @@ if __name__ == '__main__':
         if list_len != 0:
             scrape_done = scrape(urls_list_ready[0])
             if scrape_done:
-                # movie_counts = 0
                 continue_next = search_movies_per_page(find_next=True)
                 print('NEXT???????????????\n', continue_next)
                 if continue_next:
@@ -434,7 +361,7 @@ if __name__ == '__main__':
 
     with open(f'{FILE_LOCATION}year_list.csv', 'a', newline='', encoding='utf8') as f:
         writer = csv.writer(f)
-        writer.writerow([next_from_year, next_to_year])
+        writer.writerow([next_from_date, next_to_date])
 
     # drop duplicates
     df = pd.read_csv(f'{WATCHER_FOLDER}{file_name}.csv')
