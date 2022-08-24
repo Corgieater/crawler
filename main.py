@@ -48,9 +48,6 @@ date = today.strftime("%Y-%m-%d")
 file_name = f'movie_{date}'
 
 
-# from_date = None
-# to_date = None
-
 from_date = None
 to_date = None
 genre_count = 0
@@ -110,8 +107,6 @@ def get_data_clean_it_and_input_data(page_url):
     scraped_movie = []
     unclean_title = None
     unclean_year = None
-    tag_line = None
-    poster_url = None
 
     # get title
     try:
@@ -130,10 +125,9 @@ def get_data_clean_it_and_input_data(page_url):
 
     m_title = cut_string(unclean_title, ' (')
     scraped_movie.append(m_title)
-    # scraped_poster.append(m_title)
     year = unclean_year[0].string
     scraped_movie.append(year)
-    # scraped_poster.append(year)
+
     try:
         story_line = soup.find('span', class_='sc-16ede01-2 gXUyNh').getText()
         if story_line == '':
@@ -234,13 +228,13 @@ def get_driver():
     if driver is None:
         chrome_options = webdriver.ChromeOptions()
         # for efficiency
-        # chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless")
         # for not been block by pop windows
         chrome_options.add_argument("--disable-notifications")
         # driver location
         chrome_options.add_argument(CHROME_LOCATION)
         if ENVIRONMENT != 'local':
-            # below seems it has some problems if not in ec2
+            # below seems will get some problems if not in ec2 try and see
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--remote-debugging-port=9222")
@@ -286,17 +280,13 @@ def search_movies_per_page(find_next=False):
                     print('only previous and last has a[2], paul')
                     print(e)
                     chrome.close()
-                    # 我多加這行 晚點去ec2上看看
+                    # 我多加這行 晚點去ec2上看看 if anything wrong
                     return False
         except Exception as e:
             print(e)
             return False
 
-        # except Exception as e: why this here?
-        #     print(e)
-        #     return False
         else:
-            print('i am clicking next page baby!!!!!!!!!\n')
             next_page.click()
     # first time, go to imdb
     else:
@@ -329,14 +319,7 @@ def search_movies_per_page(find_next=False):
         submit.click()
 
     current_url = chrome.current_url
-    # chrome.close()
-    print('urllllllllll\n', current_url)
     return current_url
-
-
-# get page url
-current_page = search_movies_per_page()
-urls_list_ready = make_url_list(current_page)
 
 
 def scrape(urls):
@@ -346,28 +329,34 @@ def scrape(urls):
 
 
 if __name__ == '__main__':
-    while urls_list_ready != 0:
-        list_len = urls_list_ready[1]
-        if list_len != 0:
-            scrape_done = scrape(urls_list_ready[0])
-            if scrape_done:
-                continue_next = search_movies_per_page(find_next=True)
-                print('NEXT???????????????\n', continue_next)
-                if continue_next:
-                    urls_list_ready = make_url_list(continue_next)
-                else:
-                    urls_list_ready = False
-                    break
+    try:
+        # get page url
+        current_page = search_movies_per_page()
+        urls_list_ready = make_url_list(current_page)
+        while urls_list_ready != 0:
+            list_len = urls_list_ready[1]
+            if list_len != 0:
+                scrape_done = scrape(urls_list_ready[0])
+                if scrape_done:
+                    continue_next = search_movies_per_page(find_next=True)
+                    if continue_next:
+                        urls_list_ready = make_url_list(continue_next)
+                    else:
+                        urls_list_ready = False
+                        break
 
-    with open(f'{FILE_LOCATION}year_list.csv', 'a', newline='', encoding='utf8') as f:
-        writer = csv.writer(f)
-        writer.writerow([next_from_date, next_to_date])
+        with open(f'{FILE_LOCATION}year_list.csv', 'a', newline='', encoding='utf8') as f:
+            writer = csv.writer(f)
+            writer.writerow([next_from_date, next_to_date])
 
-    # drop duplicates
-    df = pd.read_csv(f'{WATCHER_FOLDER}{file_name}.csv')
-    df.drop_duplicates()
+        # drop duplicates
+        df = pd.read_csv(f'{WATCHER_FOLDER}{file_name}.csv')
+        df.drop_duplicates()
 
-    # write an ok file to tell watcher move
-    with open(f'{WATCHER_FOLDER}{file_name}_ok.csv', 'w', newline='', encoding='utf8') as f:
-        writer = csv.writer(f)
-        writer.writerow('ok')
+        # write an ok file to tell watcher move
+        with open(f'{WATCHER_FOLDER}{file_name}_ok.csv', 'w', newline='', encoding='utf8') as f:
+            writer = csv.writer(f)
+            writer.writerow('ok')
+    except Exception as e:
+        with open(f'{FILE_LOCATION}{file_name}_error.txt', 'w', newline='', encoding='utf8') as f:
+            f.write(str(e))
